@@ -7,7 +7,7 @@ bash
 git init
 git add .
 git commit -m "初始提交OBD项目代码"
-git remote add origin https://github.com/你的用户名/OBD‑ESP32‑Car‑Diagnosis.git
+git remote add origin https://github.com/daneang515-ai/OBD-ESP32-Car-Diagnosis
 git push -u origin main
 
 
