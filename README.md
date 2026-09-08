@@ -10,6 +10,7 @@
 > - 协议：ISO15765‑4 CAN‑OBD（500Kbps）
 
 ## 📦硬件清单
+
 |器件|用途|
 |---|---|
 |STM32F103C8T6最小系统板|主控，CAN‑蓝牙报文网桥|
@@ -111,3 +112,26 @@
 6. 本项目为DIY学习项目，不用于专业汽修商用设备
 
 ## 📂仓库目录结构
+
+OBD‑ESP32‑Car‑Diagnosis/
+├── src/                # STM32 HAL源码
+├── harmony_app/        # 鸿蒙ArkTS APP代码
+├── docs/               # 文档、接线说明、OBD协议
+├── schematics/         # 硬件接线图
+└── README.md           # 项目说明
+
+
+## 📄License
+MIT License，仅供个人学习DIY。
+
+使用方法
+ 
+1. 全选复制上面全部文本
+​
+2. 在你的GitHub仓库页面点  Add file  →  Create new file 
+​
+3. 文件名字填写： README.md 
+​
+4. 粘贴全部内容，拉到最下面点 Commit new file，直接保存。
+ 
+需要我顺带给你写一份 .gitignore 单片机项目文件吗，上传代码自动过滤编译出来的bin、build缓存文件。
