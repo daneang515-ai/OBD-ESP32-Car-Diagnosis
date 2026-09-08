@@ -1,0 +1,116 @@
+整套分为：硬件清单、接线表、STM32 工程配置、鸿蒙平板 APP 功能、完整工作流程、避坑要点
+用途：读取汽车 OBD‑CAN 故障码、数据流；华为平板蓝牙接收数据，做简易维修诊断软件
+📦硬件全套清单
+器件
+用途
+STM32F103C8T6 最小系统板
+主控，处理 CAN 报文、蓝牙转发
+ST‑Link V2
+电脑下载、调试程序（仅开发用，车上不用）
+TJA1050 CAN 收发器
+汽车 CAN 总线电平转换，接汽车 OBD 接口
+HC‑05 蓝牙模块
+STM32 ↔ 华为鸿蒙平板蓝牙 SPP 通信
+OBD2 16Pin 公头线
+插汽车 OBD 诊断座
+5V 电源模块
+汽车 12V 转 5V，给 STM32、TJA1050、HC‑05 供电
+面包板 + 杜邦线
+接线调试
+⚠️车上实际使用：ST‑Link 要拔掉！ST‑Link 只在电脑写程序的时候用。
+🔌硬件接线
+1）STM32 ↔ HC‑05 蓝牙
+STM32F103
+HC‑05
+PA2 (USART2 TX)
+HC‑05 RX
+PA3 (USART2 RX)
+HC‑05 TX
+5V
+VCC
+GND
+GND
+HC‑05：波特率 9600，8N1
+2）STM32 ↔ TJA1050 CAN
+STM32F103
+TJA1050
+PA11(CAN1_RX)
+RX
+PA12(CAN1_TX)
+TX
+5V
+VCC
+GND
+GND
+3）TJA1050 ↔ OBD2‑16PIN 汽车座
+TJA1050
+OBD 接口引脚
+CAN_H
+OBD 6 脚
+CAN_L
+OBD 14 脚
+GND
+OBD 4/5 脚车身地
+OBD 16 脚是汽车 12V，给电源模块输入，转 5V 给整套板子供电。
+4）ST‑Link 调试接线（仅电脑烧录时接）
+ST‑Link
+STM32F103
+SWDIO
+PA13
+SWCLK
+PA14
+GND
+GND
+❌不要接 3.3V，STM32 由自身 5V 供电。写完程序直接拔掉 ST‑Link！
+
+---
+💻STM32CubeIDE 完整工程配置（F103C8T6）
+先解决你软件报错：如果 CubeIDE 一直报 java.awt.Toolkit，直接卸载，安装到D:\ST\STM32CubeIDE，不要装 C 盘。
+1. 新建工程 OBD_DIAG，芯片STM32F103C8T6
+2. System Core → SYS
+  - Debug：Serial Wire（必须，防止锁芯片）
+3. System Core → RCC
+  - HSE：Crystal/Ceramic Resonator（外部 8M 晶振）
+4. Connectivity
+  - USART2：Asynchronous，波特率 9600；NVIC 打开 USART2 全局中断
+  - CAN1：Normal 模式，波特率 500kbit/s（大部分汽车 OBD‑CAN 速率）
+5. 时钟树：HSE 8M → 系统时钟 72MHz
+6. Project → Generate Code 生成 HAL 工程
+STM32 固件核心逻辑
+1. CAN1 初始化，过滤 OBD 标准 ID 0x7DF（诊断请求 ID）
+2. USART2 中断接收来自蓝牙（华为平板）下发 OBD 指令
+3. STM32 把指令通过 CAN1 发送给汽车 ECU
+4. 接收汽车 CAN 返回报文，通过 USART2 蓝牙回传给华为鸿蒙平板
+5. 不做复杂解析，原始报文透传给平板，解析逻辑放在鸿蒙 APP，减轻 STM32 负担
+简单说：STM32 就是一个「CAN‑蓝牙网桥」，负责转发报文。
+📱华为鸿蒙平板（11.5）APP 设计
+开发语言：ArkTS，蓝牙 SPP（串口蓝牙）
+APP 功能
+1. 蓝牙扫描、配对连接 HC‑05
+2. OBD 命令发送面板：读取故障码、清除故障码、读取转速、水温、车速
+3. 报文接收窗口：原始 CAN 报文显示
+4. 解析 OBD PID 数据，显示转速、冷却液温度、车速、电压
+5. 故障码列表显示，保存故障记录
+通信流程
+1. 平板蓝牙发 OBD 标准命令 03（读取故障码）→ HC‑05 → STM32 USART2
+2. STM32 转为 CAN 报文发送到汽车 ECU
+3. ECU 返回 CAN 数据 → STM32 → 蓝牙 → 华为平板
+4. 平板 APP 对报文做解析、显示结果
+⚙️完整工作流程
+1. 开发阶段（电脑 + ST‑Link）
+ST‑Link 接电脑和 STM32，CubeIDE 编译下载固件，调试硬件。
+2. 车上使用阶段（拔掉 ST‑Link！）
+①整套板子接汽车 OBD16 插座，汽车上电；
+②华为平板打开蓝牙，连接 HC‑05；
+③打开自研诊断 APP，发送 OBD 指令，读取车辆数据流、故障码。
+⚠️高频致命坑点
+1. ST‑Link 只写程序用，上车使用必须拔掉，否则会干扰 CAN 总线。
+2. CubeIDE 不要装 C 盘，C 盘权限导致 java 图形崩溃，就是你遇到的蓝色卡死问题。
+3. CubeMX 一定要设置 Debug 为 Serial Wire，否则下载一次芯片锁死，再也烧不进去。
+4. TJA1050 一定要接 GND 到汽车 OBD 地，地不共，CAN 通信完全乱码。
+5. HC‑05 波特率固定 9600，STM32 USART2 波特率必须严格一致。
+6. 不是所有车都是 500K CAN，老车是 250K，后续 APP 可以切换波特率。
+📝下一步我可以给你：
+1. STM32 的 HAL 库最小代码模板（CAN+USART2 中断透传）
+2. 鸿蒙 ArkTS 蓝牙 SPP 最简 Demo 代码
+3. OBD 标准 PID 命令表（故障码、转速、水温等指令）
