@@ -1,7 +1,7 @@
 # 🚗 OBD-ESP32-Car-Diagnosis
 
-> **自制汽车 OBD 诊断设备** —— STM32F103C8T6 + TJA1050 + HC-05，搭配华为鸿蒙平板做维修诊断。
-> 实现 CAN 总线与蓝牙透传，读取汽车**故障码、发动机转速、水温、车速**等数据流。
+设计与启动使用方案可直接落地的软件架构 + 启动流程，分 STM32 固件、鸿蒙 App、联调启动三部分。
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-STM32F103C8T6-orange.svg)](https://www.st.com/en/microcontrollers-microprocessors/stm32f103c8.html)
@@ -28,15 +28,85 @@
 
 ## 🎯 项目简介
 
-DIY 简易汽车维修 OBD 工具，**项目定位：学习 & 个人使用，不用于专业汽修商用设备**。
+一、整体软件架构
 
-| 层级 | 技术选型 |
-|------|----------|
-| 硬件主控 | STM32F103C8T6 最小系统板 |
-| CAN 收发 | TJA1050 CAN 收发器 |
-| 无线传输 | HC-05 蓝牙模块（SPP 串口） |
-| 上位机 | 华为鸿蒙平板（ArkTS） |
-| 协议 | ISO15765-4 CAN-OBD（默认 500Kbps，支持 250Kbps） |
+```
+┌─────────────────────────────────────────────────────┐
+│  鸿蒙 App (ArkTS)                                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+│  │ 蓝牙管理  │→│ 命令调度  │→│ 报文解析  │          │
+│  │ BtManager│  │ ObdCmd   │  │ ObdParser│          │
+│  └──────────┘  └──────────┘  └──────────┘          │
+│        ↓                            ↓               │
+│  ┌──────────┐              ┌──────────┐            │
+│  │ 原始报文  │              │ 数据模型  │            │
+│  │ 显示     │              │ + 曲线    │            │
+│  └──────────┘              └──────────┘            │
+└─────────────────────┬───────────────────────────────┘
+                      │ 蓝牙 SPP (9600, 8N1)
+                      │ 文本协议: "010C\r"
+┌─────────────────────┴───────────────────────────────┐
+│  STM32 固件 (HAL)                                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+│  │ UART2 RX │→│ 命令解析  │→│ CAN1 TX  │          │
+│  │ 中断      │  │ 状态机    │  │ 0x7DF    │          │
+│  └──────────┘  └──────────┘  └──────────┘          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
+│  │ UART2 TX │←│ 帧封装    │←│ CAN1 RX  │          │
+│  │          │  │ 转 hex    │  │ 0x7E8    │          │
+│  └──────────┘  └──────────┘  └──────────┘          │
+└─────────────────────────────────────────────────────┘
+                      │ CAN 500kbps
+┌─────────────────────┴───────────────────────────────┐
+│  汽车 ECU (OBD-II)                                   │
+└─────────────────────────────────────────────────────┘
+```
+
+设计原则：STM32 只做「透传 + 帧格式转换」，所有 PID 解析在 App。
+
+---
+
+二、通信协议设计（App ↔ STM32）
+
+这是整个项目的核心契约，先定好协议再写代码。
+
+2.1 下行命令（App → STM32，ASCII 文本，\r 结尾）
+
+命令 功能 示例
+AT 心跳/测试 AT\r
+010C 透传 OBD 请求（十六进制） 010C\r
+03 读故障码 03\r
+BAUD:500 切换 CAN 波特率 BAUD:500\r
+BAUD:250 切换 CAN 波特率 BAUD:250\r
+RESET 软复位 RESET\r
+
+2.2 上行响应（STM32 → App）
+
+统一格式： +CAN:ID:DLC:D0D1D2...D7\r\n
+
+响应 含义
++CAN:7E8:8:04410C1A3C000000\r\n ECU 应答，ID=0x7E8
++OK:BAUD=500\r\n 命令成功
++ERR:UNKNOWN_CMD\r\n 未知命令
++ERR:CAN_TIMEOUT\r\n CAN 无应答
+
+💡 用 + 前缀便于 App 过滤；\r\n 结尾便于解析。
+
+---
+
+三、STM32 固件设计
+
+3.1 模块划分
+
+```
+src/
+├── main.c              # 初始化 + 主循环
+├── uart_handler.c/h    # UART2 中断收发 + 环形缓冲
+├── can_handler.c/h     # CAN1 收发 + 过滤器
+├── cmd_parser.c/h      # 下行命令解析状态机
+├── frame_codec.c/h     # CAN 帧 ↔ ASCII hex 转换
+└── baud_switch.c/h     # CAN 波特率切换
+```
 
 **核心架构：**
 
@@ -400,7 +470,26 @@ A: 本项目为 **DIY 学习用途**，不建议替代专业设备。
 ---
 
 ## 📄 License
+MIT License
 
-[MIT License](LICENSE)，仅供个人学习 DIY 🎓
+Copyright (c) 2025 daneang515-ai
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 > ⚠️ **免责声明**：本项目仅供学习研究使用，作者不对因使用本项目造成的任何车辆损坏、人身安全等问题负责。
