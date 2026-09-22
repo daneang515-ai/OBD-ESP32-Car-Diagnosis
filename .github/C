@@ -1,0 +1,43 @@
+// cmd_parser.c
+void cmd_handle(const char *line) {
+    if (strcmp(line, "AT") == 0) {
+        uart_send_str("+OK:AT\r\n");
+    }
+    else if (strncmp(line, "BAUD:", 5) == 0) {
+        uint32_t baud = atoi(line + 5);
+        if (can_set_baud(baud) == 0)
+            uart_send_str("+OK:BAUD=500\r\n");
+        else
+            uart_send_str("+ERR:BAUD\r\n");
+    }
+    else if (is_hex_string(line)) {
+        // OBD 请求，透传到 CAN
+        can_frame_t tx;
+        if (ascii_to_frame(line, &tx) == 0) {
+            can_send(&tx);
+        }
+    }
+    else {
+        uart_send_str("+ERR:UNKNOWN_CMD\r\n");
+    }
+}
+void can_set_filter(void) {
+    CAN_FilterTypeDef f = {0};
+    f.FilterIdHigh     = 0x7E8 << 5;
+    f.FilterIdLow      = 0;
+    f.FilterMaskIdHigh = 0x7F8 << 5;  // 0x7E8~0x7EF
+    f.FilterMaskIdLow  = 0;
+    f.FilterMode       = CAN_FILTERMODE_IDMASK;
+    f.FilterScale      = CAN_FILTERSCALE_32BIT;
+    f.FilterFIFOAssignment = CAN_RX_FIFO0;
+    f.FilterBank = 0;
+    f.FilterActivation = ENABLE;
+    HAL_CAN_ConfigFilter(&hcan, &f);
+}
+
+点 做法
+串口收命令 中断 + 环形缓冲，主循环取行，不阻塞
+CAN 收帧 非阻塞轮询 FIFO0，超时 0
+波特率切换 先 HAL_CAN_Stop → 改 Prescaler → HAL_CAN_Start
+看门狗 建议开 IWDG，防上车死机
+供电监控 可选 ADC 采 5V，低于 4.5V 报警
