@@ -1,4 +1,4 @@
-# 🚗  OBD-ESP32-Car-Diagnosis
+# 🚗  OBD-stm32-Car-Diagnosis
 
 设计与启动使用方案可直接落地的软件架构 + 启动流程，分 STM32 固件、鸿蒙 App、联调启动三部分。
 
